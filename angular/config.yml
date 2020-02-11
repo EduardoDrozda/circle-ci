@@ -1,0 +1,136 @@
+# Javascript Node CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-javascript/ for more details
+#
+version: 2.1
+executors:
+  node:
+    docker:
+      - image: circleci/node:10-browsers
+
+commands:
+  restore_dependencies:
+    steps:
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "package.json" }}
+
+            - v1-dependencies-
+  save_dependencies:
+    steps:
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-dependencies-{{ checksum "package.json" }}
+
+  build:
+    steps:
+      - checkout
+      - restore_dependencies
+      - run: npm install
+      - save_dependencies
+
+  # flow:
+  #   parameters:
+  #     enviroment:
+  #       type: string
+  #       default: "production"
+  #     yarn:
+  #       type: string
+  #       default: "yarn build"
+  # severless-install:
+  #   steps:
+  #     - checkout
+  #     - build
+  #     - run:
+  #         name: Install Serverless CLI and dependencies
+  #         command: |
+  #           sudo npm i -g serverless
+  #           npm install
+  #     - save_cache:
+  #         paths:
+  #           - node_modules
+  #         key: v1-dependencies-
+
+jobs:
+  build_application:
+    executor: node
+    working_directory: ~/repo
+    steps:
+      - build
+
+  linting:
+    executor: node
+    working_directory: ~/repo
+    steps:
+      - build
+      - run: npm run lint
+
+  test:
+    executor: node
+    working_directory: ~/repo
+    steps:
+      - build
+      - run: npm run test -- --no-watch --no-progress
+
+  test_e2e:
+    executor: node
+    working_directory: ~/repo
+    steps:
+      - build
+      - run: npm run e2e
+
+  deploy_hml:
+    executor: node
+    working_directory: ~/repo
+    steps:
+      - build
+      # - severless-install
+
+  deploy_prod:
+    executor: node
+    working_directory: ~/repo
+    steps:
+      - build
+      # - severless-install
+
+workflows:
+  version: 2
+  deploy:
+    jobs:
+      - build_application
+
+      - linting:
+          requires:
+            - build_application
+
+      - test:
+          requires:
+            - build_application
+
+      - test_e2e:
+          requires:
+            - build_application
+
+      - hold_hml:
+          type: approval
+          requires:
+            - linting
+            - test
+            - test_e2e
+
+      - deploy_hml:
+          requires:
+            - hold_hml
+
+      - hold_prod:
+          type: approval
+          requires:
+            - deploy_hml
+
+      - deploy_prod:
+          requires:
+            - hold_prod
+          filters:
+            branches:
+              only: master
